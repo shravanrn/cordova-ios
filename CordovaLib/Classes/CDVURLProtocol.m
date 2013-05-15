@@ -78,7 +78,7 @@ static CDVViewController *viewControllerForRequest(NSURLRequest* request)
 + (void)registerViewController:(CDVViewController*)viewController
 {
     if (gRegisteredControllers == nil) {
-        [NSURLProtocol registerClass:[CDVURLProtocol class]];
+        [CDVDataResourceUrlProtocol registerClass:[CDVURLProtocol class]];
         gRegisteredControllers = [[NSMutableSet alloc] initWithCapacity:8];
         // The whitelist doesn't change, so grab the first one and store it.
         gWhitelist = viewController.whitelist;
@@ -104,7 +104,7 @@ static CDVViewController *viewControllerForRequest(NSURLRequest* request)
     }
 }
 
-+ (BOOL)canInitWithRequest:(NSURLRequest*)theRequest
++ (BOOL)willHandleRequest:(NSURLRequest*)theRequest
 {
     NSURL* theUrl = [theRequest URL];
     CDVViewController* viewController = viewControllerForRequest(theRequest);
@@ -144,19 +144,13 @@ static CDVViewController *viewControllerForRequest(NSURLRequest* request)
     return NO;
 }
 
-+ (NSURLRequest*)canonicalRequestForRequest:(NSURLRequest*)request
-{
-    // NSLog(@"%@ received %@", self, NSStringFromSelector(_cmd));
-    return request;
-}
-
-- (void)startLoading
+- (void)handleRequest:(NSURLRequest*)request withResponseCallback:(void(^)(NSURLResponse*))responseCallback withDataCallback:(void(^)(NSData*))dataCallback withFinishedCallback:(void(^)(void))finishedCallback
 {
     // NSLog(@"%@ received %@ - start", self, NSStringFromSelector(_cmd));
-    NSURL* url = [[self request] URL];
+    NSURL* url = [request URL];
 
     if ([[url path] isEqualToString:@"/!gap_exec"]) {
-        [self sendResponseWithResponseCode:200 data:nil mimeType:nil];
+        [self sendResponseToRequest:request withResponseCode:200 withData:nil withMimeType:nil withResponseCallback:responseCallback withDataCallback:dataCallback withFinishedCallback:finishedCallback];
         return;
     } else if ([[url absoluteString] hasPrefix:kCDVAssetsLibraryPrefix]) {
         ALAssetsLibraryAssetForURLResultBlock resultBlock = ^(ALAsset* asset) {
@@ -167,15 +161,15 @@ static CDVViewController *viewControllerForRequest(NSURLRequest* request)
                 Byte* buffer = (Byte*)malloc([assetRepresentation size]);
                 NSUInteger bufferSize = [assetRepresentation getBytes:buffer fromOffset:0.0 length:[assetRepresentation size] error:nil];
                 NSData* data = [NSData dataWithBytesNoCopy:buffer length:bufferSize freeWhenDone:YES];
-                [self sendResponseWithResponseCode:200 data:data mimeType:MIMEType];
+                [self sendResponseToRequest:request withResponseCode:200 withData:data withMimeType:MIMEType withResponseCallback:responseCallback withDataCallback:dataCallback withFinishedCallback:finishedCallback];
             } else {
                 // Retrieving the asset failed for some reason.  Send an error.
-                [self sendResponseWithResponseCode:404 data:nil mimeType:nil];
+                [self sendResponseToRequest:request withResponseCode:404 withData:nil withMimeType:nil withResponseCallback:responseCallback withDataCallback:dataCallback withFinishedCallback:finishedCallback];
             }
         };
         ALAssetsLibraryAccessFailureBlock failureBlock = ^(NSError* error) {
             // Retrieving the asset failed for some reason.  Send an error.
-            [self sendResponseWithResponseCode:401 data:nil mimeType:nil];
+            [self sendResponseToRequest:request withResponseCode:401 withData:nil withMimeType:nil withResponseCallback:responseCallback withDataCallback:dataCallback withFinishedCallback:finishedCallback];
         };
 
         ALAssetsLibrary* assetsLibrary = [[ALAssetsLibrary alloc] init];
@@ -184,37 +178,27 @@ static CDVViewController *viewControllerForRequest(NSURLRequest* request)
     }
 
     NSString* body = [gWhitelist errorStringForURL:url];
-    [self sendResponseWithResponseCode:401 data:[body dataUsingEncoding:NSASCIIStringEncoding] mimeType:nil];
+    [self sendResponseToRequest:request withResponseCode:401 withData:[body dataUsingEncoding:NSASCIIStringEncoding] withMimeType:nil withResponseCallback:responseCallback withDataCallback:dataCallback withFinishedCallback:finishedCallback];
 }
 
-- (void)stopLoading
-{
-    // do any cleanup here
-}
-
-+ (BOOL)requestIsCacheEquivalent:(NSURLRequest*)requestA toRequest:(NSURLRequest*)requestB
-{
-    return NO;
-}
-
-- (void)sendResponseWithResponseCode:(NSInteger)statusCode data:(NSData*)data mimeType:(NSString*)mimeType
+- (void)sendResponseToRequest:(NSURLRequest*)request withResponseCode:(NSInteger)statusCode withData:(NSData*)data withMimeType:(NSString*)mimeType withResponseCallback:(void(^)(NSURLResponse*))responseCallback withDataCallback:(void(^)(NSData*))dataCallback withFinishedCallback:(void(^)(void))finishedCallback
 {
     if (mimeType == nil) {
         mimeType = @"text/plain";
     }
     NSString* encodingName = [@"text/plain" isEqualToString : mimeType] ? @"UTF-8" : nil;
     CDVHTTPURLResponse* response =
-        [[CDVHTTPURLResponse alloc] initWithURL:[[self request] URL]
+        [[CDVHTTPURLResponse alloc] initWithURL:[request URL]
                                        MIMEType:mimeType
                           expectedContentLength:[data length]
                                textEncodingName:encodingName];
     response.statusCode = statusCode;
 
-    [[self client] URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    responseCallback(response);
     if (data != nil) {
-        [[self client] URLProtocol:self didLoadData:data];
+        dataCallback(data);
     }
-    [[self client] URLProtocolDidFinishLoading:self];
+    finishedCallback();
 }
 
 @end

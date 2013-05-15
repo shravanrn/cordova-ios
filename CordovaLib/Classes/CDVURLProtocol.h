@@ -19,10 +19,11 @@
 
 #import <Foundation/Foundation.h>
 #import "CDVAvailability.h"
+#include "CDVDataResourceUrlProtocol.h"
 
 @class CDVViewController;
 
-@interface CDVURLProtocol : NSURLProtocol {}
+@interface CDVURLProtocol : CDVDataResourceUrlProtocol {}
 
 + (void)registerViewController:(CDVViewController*)viewController;
 + (void)unregisterViewController:(CDVViewController*)viewController;
